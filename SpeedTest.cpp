@@ -8,31 +8,35 @@
 #include "MD5Util.h"
 #include <netdb.h>
 
-SpeedTest::SpeedTest(float minServerVersion):
-        mLatency(0),
-        mUploadSpeed(0),
-        mDownloadSpeed(0) {
+SpeedTest::SpeedTest(float minServerVersion) : mLatency(0),
+                                               mUploadSpeed(0),
+                                               mDownloadSpeed(0)
+{
     curl_global_init(CURL_GLOBAL_DEFAULT);
     mIpInfo = IPInfo();
     mServerList = std::vector<ServerInfo>();
     mMinSupportedServer = minServerVersion;
 }
 
-SpeedTest::~SpeedTest() {
+SpeedTest::~SpeedTest()
+{
     curl_global_cleanup();
     mServerList.clear();
 }
 
-bool SpeedTest::ipInfo(IPInfo& info) {
+bool SpeedTest::ipInfo(IPInfo &info)
+{
 
-    if (!mIpInfo.ip_address.empty()){
+    if (!mIpInfo.ip_address.empty())
+    {
         info = mIpInfo;
         return true;
     }
 
     std::stringstream oss;
     auto code = httpGet(SPEED_TEST_IP_INFO_API_URL, oss);
-    if (code == CURLE_OK){
+    if (code == CURLE_OK)
+    {
         auto values = SpeedTest::parseQueryString(oss.str());
         mIpInfo = IPInfo();
         mIpInfo.ip_address = values["ip_address"];
@@ -48,19 +52,21 @@ bool SpeedTest::ipInfo(IPInfo& info) {
     return false;
 }
 
-const std::vector<ServerInfo>& SpeedTest::serverList() {
+const std::vector<ServerInfo> &SpeedTest::serverList()
+{
     if (!mServerList.empty())
         return mServerList;
 
     int http_code = 0;
-    if (fetchServers(SPEED_TEST_SERVER_LIST_URL, mServerList, http_code) && http_code == 200){
+    if (fetchServers(SPEED_TEST_SERVER_LIST_URL, mServerList, http_code) && http_code == 200)
+    {
         return mServerList;
     }
     return mServerList;
 }
 
-
-const ServerInfo SpeedTest::bestServer(const int sample_size, std::function<void(bool)> cb) {
+const ServerInfo SpeedTest::bestServer(const int sample_size, std::function<void(bool)> cb)
+{
     auto best = findBestServerWithin(serverList(), mLatency, sample_size, cb);
     SpeedTestClient client = SpeedTestClient(best);
     testLatency(client, SPEED_TEST_LATENCY_SAMPLE_SIZE, mLatency);
@@ -68,70 +74,86 @@ const ServerInfo SpeedTest::bestServer(const int sample_size, std::function<void
     return best;
 }
 
-bool SpeedTest::setServer(ServerInfo& server){
+bool SpeedTest::setServer(ServerInfo &server)
+{
     SpeedTestClient client = SpeedTestClient(server);
-    if (client.connect() && client.version() >= mMinSupportedServer){
-        if (!testLatency(client, SPEED_TEST_LATENCY_SAMPLE_SIZE, mLatency)){
+    if (client.connect() && client.version() >= mMinSupportedServer)
+    {
+        if (!testLatency(client, SPEED_TEST_LATENCY_SAMPLE_SIZE, mLatency))
+        {
             return false;
         }
-    } else {
+    }
+    else
+    {
         client.close();
         return false;
     }
     client.close();
     return true;
-
 }
 
-bool SpeedTest::downloadSpeed(const ServerInfo &server, const TestConfig &config, double& result, std::function<void(bool)> cb) {
+bool SpeedTest::downloadSpeed(const ServerInfo &server, const TestConfig &config, double &result, std::function<void(bool)> cb)
+{
     opFn pfunc = &SpeedTestClient::download;
     mDownloadSpeed = execute(server, config, pfunc, cb);
     result = mDownloadSpeed;
     return true;
 }
 
-bool SpeedTest::uploadSpeed(const ServerInfo &server, const TestConfig &config, double& result, std::function<void(bool)> cb) {
+bool SpeedTest::uploadSpeed(const ServerInfo &server, const TestConfig &config, double &result, std::function<void(bool)> cb)
+{
     opFn pfunc = &SpeedTestClient::upload;
     mUploadSpeed = execute(server, config, pfunc, cb);
     result = mUploadSpeed;
     return true;
 }
 
-const long &SpeedTest::latency() {
+const long &SpeedTest::latency()
+{
     return mLatency;
 }
 
-bool SpeedTest::jitter(const ServerInfo &server, long& result, const int sample) {
+bool SpeedTest::jitter(const ServerInfo &server, long &result, const int sample)
+{
     auto client = SpeedTestClient(server);
     double current_jitter = 0;
-    long previous_ms =  LONG_MAX;
-    if (client.connect()){
-        for (int i = 0; i < sample; i++){
+    long previous_ms = LONG_MAX;
+    if (client.connect())
+    {
+        for (int i = 0; i < sample; i++)
+        {
             long ms = 0;
-            if (client.ping(ms)){
-                if (previous_ms == LONG_MAX) {
+            if (client.ping(ms))
+            {
+                if (previous_ms == LONG_MAX)
+                {
                     previous_ms = ms;
-                } else {
+                }
+                else
+                {
                     current_jitter += std::abs(previous_ms - ms);
                 }
             }
         }
         client.close();
-    } else {
+    }
+    else
+    {
         return false;
     }
 
-    result = (long) std::floor(current_jitter / sample);
+    result = (long)std::floor(current_jitter / sample);
     return true;
 }
 
-
-bool SpeedTest::share(const ServerInfo& server, std::string& image_url) {
+bool SpeedTest::share(const ServerInfo &server, std::string &image_url)
+{
     std::stringstream hash;
     hash << std::setprecision(0) << std::fixed << mLatency
-    << "-" << std::setprecision(2) << std::fixed << (mUploadSpeed * 1000)
-    << "-" << std::setprecision(2) << std::fixed << (mDownloadSpeed * 1000)
-    << "-" << SPEED_TEST_API_KEY;
+         << "-" << std::setprecision(2) << std::fixed << (mUploadSpeed * 1000)
+         << "-" << std::setprecision(2) << std::fixed << (mDownloadSpeed * 1000)
+         << "-" << SPEED_TEST_API_KEY;
     std::string hex_digest = MD5Util::hexDigest(hash.str());
     std::stringstream post_data;
     post_data << "download=" << std::setprecision(2) << std::fixed << (mDownloadSpeed * 1000) << "&";
@@ -150,14 +172,16 @@ bool SpeedTest::share(const ServerInfo& server, std::string& image_url) {
     auto cres = SpeedTest::httpPost(SPEED_TEST_API_URL, post_data.str(), result, c);
     long http_code = 0;
     image_url.clear();
-    if (cres == CURLE_OK){
+    if (cres == CURLE_OK)
+    {
         curl_easy_getinfo(c, CURLINFO_HTTP_CODE, &http_code);
-        if (http_code == 200 && !result.str().empty()){
+        if (http_code == 200 && !result.str().empty())
+        {
             auto data = SpeedTest::parseQueryString(result.str());
-            if (data.count("resultid") == 1){
+            if (data.count("resultid") == 1)
+            {
                 image_url = "http://www.speedtest.net/result/" + data["resultid"] + ".png";
             }
-
         }
     }
 
@@ -167,12 +191,15 @@ bool SpeedTest::share(const ServerInfo& server, std::string& image_url) {
 
 // private
 
-double SpeedTest::execute(const ServerInfo &server, const TestConfig &config, const opFn &pfunc, std::function<void(bool)> cb) {
+double SpeedTest::execute(const ServerInfo &server, const TestConfig &config, const opFn &pfunc, std::function<void(bool)> cb)
+{
     std::vector<std::thread> workers;
     double overall_speed = 0;
     std::mutex mtx;
-    for (int i = 0; i < config.concurrency; i++) {
-        workers.push_back(std::thread([&server, &overall_speed, &pfunc, &config, &mtx, cb](){
+    for (int i = 0; i < config.concurrency; i++)
+    {
+        workers.push_back(std::thread([&server, &overall_speed, &pfunc, &config, &mtx, cb]()
+                                      {
             long start_size = config.start_size;
             long max_size   = config.max_size;
             long incr_size  = config.incr_size;
@@ -226,11 +253,10 @@ double SpeedTest::execute(const ServerInfo &server, const TestConfig &config, co
             } else {
                 if (cb)
                     cb(false);
-            }
-        }));
-
+            } }));
     }
-    for (auto &t : workers){
+    for (auto &t : workers)
+    {
         t.join();
     }
 
@@ -239,13 +265,15 @@ double SpeedTest::execute(const ServerInfo &server, const TestConfig &config, co
     return overall_speed / 1000 / 1000;
 }
 
-template<typename T>
-T SpeedTest::deg2rad(T n) {
+template <typename T>
+T SpeedTest::deg2rad(T n)
+{
     return (n * M_PI / 180);
 }
 
-template<typename T>
-T SpeedTest::harversine(std::pair<T, T> n1, std::pair<T, T> n2) {
+template <typename T>
+T SpeedTest::harversine(std::pair<T, T> n1, std::pair<T, T> n2)
+{
     T lat1r = deg2rad(n1.first);
     T lon1r = deg2rad(n1.second);
     T lat2r = deg2rad(n2.first);
@@ -255,17 +283,16 @@ T SpeedTest::harversine(std::pair<T, T> n1, std::pair<T, T> n2) {
     return 2.0 * EARTH_RADIUS_KM * std::asin(std::sqrt(u * u + std::cos(lat1r) * std::cos(lat2r) * v * v));
 }
 
-CURLcode SpeedTest::httpGet(const std::string &url, std::stringstream &ss, CURL *handler, long timeout) {
+CURLcode SpeedTest::httpGet(const std::string &url, std::stringstream &ss, CURL *handler, long timeout)
+{
 
     CURLcode code(CURLE_FAILED_INIT);
-    CURL* curl = SpeedTest::curl_setup(handler);
+    CURL *curl = SpeedTest::curl_setup(handler);
 
-
-    if (curl){
-        if (CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_FILE, &ss))
-            && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout))
-            && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, this->strict_ssl_verify))
-            && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_URL, url.c_str()))) {
+    if (curl)
+    {
+        if (CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_FILE, &ss)) && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout)) && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, this->strict_ssl_verify)) && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_URL, url.c_str())))
+        {
             code = curl_easy_perform(curl);
         }
         if (handler == nullptr)
@@ -274,17 +301,16 @@ CURLcode SpeedTest::httpGet(const std::string &url, std::stringstream &ss, CURL 
     return code;
 }
 
-CURLcode SpeedTest::httpPost(const std::string &url, const std::string &postdata, std::stringstream &os, void *handler, long timeout) {
+CURLcode SpeedTest::httpPost(const std::string &url, const std::string &postdata, std::stringstream &os, void *handler, long timeout)
+{
 
     CURLcode code(CURLE_FAILED_INIT);
-    CURL* curl = SpeedTest::curl_setup(handler);
+    CURL *curl = SpeedTest::curl_setup(handler);
 
-    if (curl){
-        if (CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_FILE, &os))
-            && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout))
-            && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_URL, url.c_str()))
-            && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, this->strict_ssl_verify))
-            && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postdata.c_str()))) {
+    if (curl)
+    {
+        if (CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_FILE, &os)) && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout)) && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_URL, url.c_str())) && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, this->strict_ssl_verify)) && CURLE_OK == (code = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postdata.c_str())))
+        {
             code = curl_easy_perform(curl);
         }
         if (handler == nullptr)
@@ -293,54 +319,61 @@ CURLcode SpeedTest::httpPost(const std::string &url, const std::string &postdata
     return code;
 }
 
-CURL *SpeedTest::curl_setup(CURL *handler) {
-    CURL* curl = handler == nullptr ? curl_easy_init() : handler;
-    if (curl){
-        if (curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &writeFunc) == CURLE_OK
-            && curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L) == CURLE_OK
-            && curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK
-            && curl_easy_setopt(curl, CURLOPT_USERAGENT, SPEED_TEST_USER_AGENT) == CURLE_OK){
+CURL *SpeedTest::curl_setup(CURL *handler)
+{
+    CURL *curl = handler == nullptr ? curl_easy_init() : handler;
+    if (curl)
+    {
+        if (curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, &writeFunc) == CURLE_OK && curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 1L) == CURLE_OK && curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L) == CURLE_OK && curl_easy_setopt(curl, CURLOPT_USERAGENT, SPEED_TEST_USER_AGENT) == CURLE_OK)
+        {
             return curl;
-        } else {
+        }
+        else
+        {
             curl_easy_cleanup(handler);
             return nullptr;
         }
     }
     return nullptr;
-
-
 }
 
-size_t SpeedTest::writeFunc(void *buf, size_t size, size_t nmemb, void *userp) {
+size_t SpeedTest::writeFunc(void *buf, size_t size, size_t nmemb, void *userp)
+{
 
-    if (userp){
+    if (userp)
+    {
         std::stringstream &os = *static_cast<std::stringstream *>(userp);
         std::streamsize len = size * nmemb;
-        if(os.write(static_cast<char*>(buf), len))
-            return  static_cast<size_t>(len);
+        if (os.write(static_cast<char *>(buf), len))
+            return static_cast<size_t>(len);
     }
     return 0;
 }
 
-std::map<std::string, std::string> SpeedTest::parseQueryString(const std::string &query) {
+std::map<std::string, std::string> SpeedTest::parseQueryString(const std::string &query)
+{
     auto map = std::map<std::string, std::string>();
     auto pairs = splitString(query, '&');
-    for (auto &p : pairs){
+    for (auto &p : pairs)
+    {
         auto kv = splitString(p, '=');
-        if (kv.size() == 2){
+        if (kv.size() == 2)
+        {
             map[kv[0]] = kv[1];
         }
     }
     return map;
 }
 
-std::vector<std::string> SpeedTest::splitString(const std::string &instr, const char separator) {
+std::vector<std::string> SpeedTest::splitString(const std::string &instr, const char separator)
+{
     if (instr.empty())
         return std::vector<std::string>();
 
     std::vector<std::string> tokens;
     std::size_t start = 0, end = 0;
-    while ((end = instr.find(separator, start)) != std::string::npos) {
+    while ((end = instr.find(separator, start)) != std::string::npos)
+    {
         std::string temp = instr.substr(start, end - start);
         if (!temp.empty())
             tokens.push_back(temp);
@@ -350,56 +383,58 @@ std::vector<std::string> SpeedTest::splitString(const std::string &instr, const 
     if (!temp.empty())
         tokens.push_back(temp);
     return tokens;
-
 }
 
-ServerInfo SpeedTest::processServerXMLNode(xmlTextReaderPtr reader) {
+ServerInfo SpeedTest::processServerXMLNode(xmlTextReaderPtr reader)
+{
 
     auto name = xmlTextReaderConstName(reader);
-    auto nodeName = std::string((char*)name);
+    auto nodeName = std::string((char *)name);
 
-    if (!name || nodeName != "server"){
+    if (!name || nodeName != "server")
+    {
         return ServerInfo();
     }
 
-    if (xmlTextReaderAttributeCount(reader) > 0){
+    if (xmlTextReaderAttributeCount(reader) > 0)
+    {
         auto info = ServerInfo();
-        auto server_url         = xmlTextReaderGetAttribute(reader, BAD_CAST "url");
-        auto server_lat         = xmlTextReaderGetAttribute(reader, BAD_CAST "lat");
-        auto server_lon         = xmlTextReaderGetAttribute(reader, BAD_CAST "lon");
-        auto server_name        = xmlTextReaderGetAttribute(reader, BAD_CAST "name");
-        auto server_county      = xmlTextReaderGetAttribute(reader, BAD_CAST "country");
-        auto server_cc          = xmlTextReaderGetAttribute(reader, BAD_CAST "cc");
-        auto server_host        = xmlTextReaderGetAttribute(reader, BAD_CAST "host");
-        auto server_id          = xmlTextReaderGetAttribute(reader, BAD_CAST "id");
-        auto server_sponsor     = xmlTextReaderGetAttribute(reader, BAD_CAST "sponsor");
+        auto server_url = xmlTextReaderGetAttribute(reader, BAD_CAST "url");
+        auto server_lat = xmlTextReaderGetAttribute(reader, BAD_CAST "lat");
+        auto server_lon = xmlTextReaderGetAttribute(reader, BAD_CAST "lon");
+        auto server_name = xmlTextReaderGetAttribute(reader, BAD_CAST "name");
+        auto server_county = xmlTextReaderGetAttribute(reader, BAD_CAST "country");
+        auto server_cc = xmlTextReaderGetAttribute(reader, BAD_CAST "cc");
+        auto server_host = xmlTextReaderGetAttribute(reader, BAD_CAST "host");
+        auto server_id = xmlTextReaderGetAttribute(reader, BAD_CAST "id");
+        auto server_sponsor = xmlTextReaderGetAttribute(reader, BAD_CAST "sponsor");
 
         if (server_name)
-            info.name.append((char*)server_name);
+            info.name.append((char *)server_name);
 
         if (server_url)
-            info.url.append((char*)server_url);
+            info.url.append((char *)server_url);
 
         if (server_county)
-            info.country.append((char*)server_county);
+            info.country.append((char *)server_county);
 
         if (server_cc)
-            info.country_code.append((char*)server_cc);
+            info.country_code.append((char *)server_cc);
 
         if (server_host)
-            info.host.append((char*)server_host);
+            info.host.append((char *)server_host);
 
         if (server_sponsor)
-            info.sponsor.append((char*)server_sponsor);
+            info.sponsor.append((char *)server_sponsor);
 
         if (server_id)
-            info.id  = std::atoi((char*)server_id);
+            info.id = std::atoi((char *)server_id);
 
         if (server_lat)
-            info.lat = std::stof((char*)server_lat);
+            info.lat = std::stof((char *)server_lat);
 
         if (server_lon)
-            info.lon = std::stof((char*)server_lon);
+            info.lon = std::stof((char *)server_lon);
 
         xmlFree(server_url);
         xmlFree(server_lat);
@@ -416,34 +451,40 @@ ServerInfo SpeedTest::processServerXMLNode(xmlTextReaderPtr reader) {
     return ServerInfo();
 }
 
-bool SpeedTest::fetchServers(const std::string& url, std::vector<ServerInfo>& target, int &http_code) {
+bool SpeedTest::fetchServers(const std::string &url, std::vector<ServerInfo> &target, int &http_code)
+{
     std::stringstream oss;
     target.clear();
 
     auto isHttpSchema = url.find_first_of("http") == 0;
 
-    CURL* curl = curl_easy_init();
+    CURL *curl = curl_easy_init();
     auto cres = httpGet(url, oss, curl, 20);
 
     if (cres != CURLE_OK)
         return false;
 
-    if (isHttpSchema) {
+    if (isHttpSchema)
+    {
         int req_status;
         curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &req_status);
         http_code = req_status;
 
-        if (http_code != 200){
+        if (http_code != 200)
+        {
             curl_easy_cleanup(curl);
             return false;
         }
-    } else {
+    }
+    else
+    {
         http_code = 200;
     }
 
     size_t len = oss.str().length();
-    auto *xmlbuff = (char*)calloc(len + 1, sizeof(char));
-    if (!xmlbuff){
+    auto *xmlbuff = (char *)calloc(len + 1, sizeof(char));
+    if (!xmlbuff)
+    {
         std::cerr << "Unable to calloc" << std::endl;
         curl_easy_cleanup(curl);
         return false;
@@ -453,32 +494,39 @@ bool SpeedTest::fetchServers(const std::string& url, std::vector<ServerInfo>& ta
 
     xmlTextReaderPtr reader = xmlReaderForMemory(xmlbuff, static_cast<int>(len), nullptr, nullptr, 0);
 
-    if (reader != nullptr) {
+    if (reader != nullptr)
+    {
         IPInfo ipInfo;
-        if (!SpeedTest::ipInfo(ipInfo)){
+        if (!SpeedTest::ipInfo(ipInfo))
+        {
             curl_easy_cleanup(curl);
             free(xmlbuff);
             xmlFreeTextReader(reader);
-            std::cerr << "OOPS!" <<std::endl;
+            std::cerr << "OOPS!" << std::endl;
             return false;
         }
         auto ret = xmlTextReaderRead(reader);
-        while (ret == 1) {
+        while (ret == 1)
+        {
             ServerInfo info = processServerXMLNode(reader);
-            if (!info.url.empty()){
+            if (!info.url.empty())
+            {
                 info.distance = harversine(std::make_pair(ipInfo.lat, ipInfo.lon), std::make_pair(info.lat, info.lon));
                 target.push_back(info);
             }
             ret = xmlTextReaderRead(reader);
         }
         xmlFreeTextReader(reader);
-        if (ret != 0) {
+        if (ret != 0)
+        {
             curl_easy_cleanup(curl);
             free(xmlbuff);
             std::cerr << "Failed to parse" << std::endl;
             return false;
         }
-    } else {
+    }
+    else
+    {
         std::cerr << "Unable to initialize xml parser" << std::endl;
         curl_easy_cleanup(curl);
         free(xmlbuff);
@@ -488,71 +536,79 @@ bool SpeedTest::fetchServers(const std::string& url, std::vector<ServerInfo>& ta
     curl_easy_cleanup(curl);
     free(xmlbuff);
     xmlCleanupParser();
-    std::sort(target.begin(), target.end(), [](const ServerInfo &a, const ServerInfo &b) -> bool {
-        return a.distance < b.distance;
-    });
+    std::sort(target.begin(), target.end(), [](const ServerInfo &a, const ServerInfo &b) -> bool
+              { return a.distance < b.distance; });
     return true;
 }
 
 const ServerInfo SpeedTest::findBestServerWithin(const std::vector<ServerInfo> &serverList, long &latency,
-                                                 const int sample_size, std::function<void(bool)> cb) {
-    int i = sample_size;
+                                                 const int sample_size, std::function<void(bool)> cb)
+{
+    // int i = sample_size;
     ServerInfo bestServer = serverList[0];
 
-    latency = INT_MAX;
+    // latency = INT_MAX;
 
-    for (auto &server : serverList){
-        auto client = SpeedTestClient(server);
+    // for (auto &server : serverList){
+    //     auto client = SpeedTestClient(server);
 
-        if (!client.connect()){
-            if (cb)
-                cb(false);
-            continue;
-        }
+    //     if (!client.connect()){
+    //         if (cb)
+    //             cb(false);
+    //         continue;
+    //     }
 
-        if (client.version() < mMinSupportedServer){
-            client.close();
-            continue;
-        }
+    //     if (client.version() < mMinSupportedServer){
+    //         client.close();
+    //         continue;
+    //     }
 
-        long current_latency = LONG_MAX;
-        if (testLatency(client, 20, current_latency)){
-            if (current_latency < latency){
-                latency = current_latency;
-                bestServer = server;
-            }
-        }
-        client.close();
-        if (cb)
-            cb(true);
+    //     long current_latency = LONG_MAX;
+    //     if (testLatency(client, 20, current_latency)){
+    //         if (current_latency < latency){
+    //             latency = current_latency;
+    //             bestServer = server;
+    //         }
+    //     }
+    //     client.close();
+    //     if (cb)
+    //         cb(true);
 
-        if (i-- < 0){
-            break;
-        }
+    //     if (i-- < 0){
+    //         break;
+    //     }
 
-    }
+    // }
     return bestServer;
 }
 
-bool SpeedTest::testLatency(SpeedTestClient &client, const int sample_size, long &latency) {
-    if (!client.connect()){
+bool SpeedTest::testLatency(SpeedTestClient &client, const int sample_size, long &latency)
+{
+    if (!client.connect())
+    {
         return false;
     }
     latency = INT_MAX;
     long temp_latency = 0;
-    for (int i = 0; i < sample_size; i++){
-        if (client.ping(temp_latency)){
-            if (temp_latency < latency){
+    for (int i = 0; i < sample_size; i++)
+    {
+        if (client.ping(temp_latency))
+        {
+            if (temp_latency < latency)
+            {
                 latency = temp_latency;
             }
-        } else {
+        }
+        else
+        {
             return false;
         }
     }
     return true;
 }
 
-void SpeedTest::setInsecure(bool insecure) {
+void SpeedTest::setInsecure(bool insecure)
+{
     // when insecure is on, we dont want ssl cert to be verified.
     // when insecure is off, we want ssl cert to be verified.
     this->strict_ssl_verify = !insecure;

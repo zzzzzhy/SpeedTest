@@ -34,3 +34,5 @@ cmake-build-linux/
 
 # Visual Studio 2015/2017 cache/options directory
 .vs/
+build/
+.vscode/
