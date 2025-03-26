@@ -1,8 +1,9 @@
 name: C/C++ CI
 
 on:
+  pull_request:
   push:
-    branches: [ test ]
+    branches: [ master ]
   workflow_dispatch:
     inputs:
       branch: 
